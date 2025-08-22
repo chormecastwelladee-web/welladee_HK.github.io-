@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบติดตามงานแม่บ้าน</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Sarabun', sans-serif; }
+        .task-completed { background: linear-gradient(135deg, #10b981, #059669); }
+        .task-pending { background: linear-gradient(135deg, #f59e0b, #d97706); }
+        .fade-in { animation: fadeIn 0.3s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .image-preview { transition: all 0.3s ease; }
+        .image-preview:hover { transform: scale(1.05); }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen">
+    <!-- Header -->
+    <div class="bg-white shadow-lg border-b-4 border-blue-500">
+        <div class="container mx-auto px-4 py-6">
+            <h1 class="text-3xl font-bold text-gray-800 text-center">🏠 ระบบติดตามงานแม่บ้าน</h1>
+            <div class="flex justify-center mt-4 space-x-4">
+                <button onclick="showTab('tasks')" id="tasksTab" class="px-6 py-2 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 transition-colors">
+                    📋 งานทั้งหมด
+                </button>
+                <button onclick="showTab('summary')" id="summaryTab" class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition-colors">
+                    📊 สรุปงาน
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Progress Bar -->
+    <div class="container mx-auto px-4 py-4">
+        <div class="bg-white rounded-lg shadow-md p-4">
+            <div class="flex justify-between items-center mb-2">
+                <span class="text-sm font-medium text-gray-700">ความคืบหน้าของเดือนนี้</span>
+                <span id="progressText" class="text-sm font-bold text-blue-600">0%</span>
+            </div>
+            <div class="w-full bg-gray-200 rounded-full h-3">
+                <div id="progressBar" class="bg-gradient-to-r from-blue-500 to-green-500 h-3 rounded-full transition-all duration-500" style="width: 0%"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tasks Tab -->
+    <div id="tasksContent" class="container mx-auto px-4 pb-8">
+        <!-- Filters -->
+        <div class="bg-white rounded-lg shadow-md p-4 mb-6">
+            <h3 class="text-lg font-semibold mb-4 text-gray-800">🔍 ตัวกรอง</h3>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <select id="floorFilter" class="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    <option value="">ทุกชั้น</option>
+                    <option value="3">ชั้น 3</option>
+                    <option value="4">ชั้น 4</option>
+                    <option value="5">ชั้น 5</option>
+                    <option value="6">ชั้น 6</option>
+                </select>
+                <select id="roomFilter" class="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    <option value="">ทุกห้อง</option>
+                </select>
+                <select id="statusFilter" class="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    <option value="">ทุกสถานะ</option>
+                    <option value="completed">เสร็จเรียบร้อย</option>
+                    <option value="pending">ยังไม่เสร็จ</option>
+                </select>
+                <button onclick="resetAllTasks()" class="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors font-medium">
+                    🔄 รีเซ็ตทุกงาน
+                </button>
+            </div>
+        </div>
+
+        <!-- Tasks Grid -->
+        <div id="tasksGrid" class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+            <!-- Tasks will be generated here -->
+        </div>
+    </div>
+
+    <!-- Summary Tab -->
+    <div id="summaryContent" class="container mx-auto px-4 pb-8 hidden">
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h3 class="text-2xl font-bold mb-6 text-gray-800">📊 สรุปงานทั้งหมด</h3>
+            <div id="summaryStats" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <!-- Stats will be generated here -->
+            </div>
+            <div id="summaryTable" class="overflow-x-auto">
+                <!-- Summary table will be generated here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Image Modal -->
+    <div id="imageModal" class="fixed inset-0 bg-black bg-opacity-75 hidden z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg max-w-4xl max-h-full overflow-auto">
+            <div class="p-4 border-b flex justify-between items-center">
+                <h3 class="text-lg font-semibold">รูปภาพงาน</h3>
+                <button onclick="closeImageModal()" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+            </div>
+            <div id="imageModalContent" class="p-4">
+                <!-- Images will be displayed here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Data structure
+        const floors = {
+            3: Array.from({length: 10}, (_, i) => 301 + i),
+            4: Array.from({length: 10}, (_, i) => 401 + i),
+            5: Array.from({length: 8}, (_, i) => 501 + i),
+            6: Array.from({length: 8}, (_, i) => 601 + i)
+        };
+
+        const taskTypes = [
+            'ระเบียงห้อง',
+            'กระจกห้องพัก',
+            'ซักพรม',
+            'ขัดเค้าเตอร์หินอ่อน',
+            'ขัดห้องน้ำ',
+            'ใส่น้ำตาลมด',
+            'ทางเดิน corridor'
+        ];
+
+        let tasks = [];
+        let currentTab = 'tasks';
+
+        // Initialize tasks
+        function initializeTasks() {
+            tasks = [];
+            Object.keys(floors).forEach(floor => {
+                floors[floor].forEach(room => {
+                    taskTypes.forEach(taskType => {
+                        tasks.push({
+                            id: `${floor}-${room}-${taskType}`,
+                            floor: floor,
+                            room: room,
+                            taskType: taskType,
+                            status: 'pending',
+                            assignee: '',
+                            images: [],
+                            completedAt: null,
+                            completedBy: ''
+                        });
+                    });
+                });
+            });
+            loadFromStorage();
+        }
+
+        // Storage functions
+        function saveToStorage() {
+            localStorage.setItem('housekeepingTasks', JSON.stringify(tasks));
+            localStorage.setItem('lastResetDate', new Date().toDateString());
+        }
+
+        function loadFromStorage() {
+            const saved = localStorage.getItem('housekeepingTasks');
+            const lastReset = localStorage.getItem('lastResetDate');
+            
+            // Check if we need to reset (first day of month)
+            const today = new Date();
+            const lastResetDate = lastReset ? new Date(lastReset) : null;
+            
+            if (!lastResetDate || (today.getDate() === 1 && today.toDateString() !== lastReset)) {
+                // Reset all tasks on first day of month
+                tasks.forEach(task => {
+                    task.status = 'pending';
+                    task.completedAt = null;
+                    task.completedBy = '';
+                });
+                saveToStorage();
+                return;
+            }
+            
+            if (saved) {
+                const savedTasks = JSON.parse(saved);
+                tasks.forEach(task => {
+                    const savedTask = savedTasks.find(t => t.id === task.id);
+                    if (savedTask) {
+                        Object.assign(task, savedTask);
+                    }
+                });
+            }
+        }
+
+        // Render functions
+        function renderTasks() {
+            const grid = document.getElementById('tasksGrid');
+            const floorFilter = document.getElementById('floorFilter').value;
+            const roomFilter = document.getElementById('roomFilter').value;
+            const statusFilter = document.getElementById('statusFilter').value;
+
+            let filteredTasks = tasks;
+            
+            if (floorFilter) {
+                filteredTasks = filteredTasks.filter(task => task.floor == floorFilter);
+            }
+            if (roomFilter) {
+                filteredTasks = filteredTasks.filter(task => task.room == roomFilter);
+            }
+            if (statusFilter) {
+                filteredTasks = filteredTasks.filter(task => task.status === statusFilter);
+            }
+
+            // Group by room
+            const groupedTasks = {};
+            filteredTasks.forEach(task => {
+                const key = `${task.floor}-${task.room}`;
+                if (!groupedTasks[key]) {
+                    groupedTasks[key] = [];
+                }
+                groupedTasks[key].push(task);
+            });
+
+            grid.innerHTML = '';
+            Object.keys(groupedTasks).forEach(roomKey => {
+                const [floor, room] = roomKey.split('-');
+                const roomTasks = groupedTasks[roomKey];
+                
+                const roomCard = document.createElement('div');
+                roomCard.className = 'bg-white rounded-lg shadow-md overflow-hidden fade-in';
+                
+                const completedCount = roomTasks.filter(t => t.status === 'completed').length;
+                const totalCount = roomTasks.length;
+                const progressPercent = (completedCount / totalCount) * 100;
+                
+                roomCard.innerHTML = `
+                    <div class="bg-gradient-to-r from-blue-500 to-purple-600 text-white p-4">
+                        <h3 class="text-xl font-bold">🏠 ห้อง ${room} (ชั้น ${floor})</h3>
+                        <div class="mt-2">
+                            <div class="flex justify-between text-sm mb-1">
+                                <span>ความคืบหน้า</span>
+                                <span>${completedCount}/${totalCount} (${Math.round(progressPercent)}%)</span>
+                            </div>
+                            <div class="w-full bg-blue-300 rounded-full h-2">
+                                <div class="bg-white h-2 rounded-full transition-all duration-500" style="width: ${progressPercent}%"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="p-4">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm">
+                                <thead>
+                                    <tr class="border-b">
+                                        <th class="text-left py-2">งาน</th>
+                                        <th class="text-left py-2">ผู้ทำ</th>
+                                        <th class="text-left py-2">รูปภาพ</th>
+                                        <th class="text-left py-2">สถานะ</th>
+                                        <th class="text-center py-2">การดำเนินการ</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${roomTasks.map(task => `
+                                        <tr class="border-b hover:bg-gray-50">
+                                            <td class="py-3 font-medium">${task.taskType}</td>
+                                            <td class="py-3">
+                                                <input type="text" 
+                                                       value="${task.assignee}" 
+                                                       onchange="updateAssignee('${task.id}', this.value)"
+                                                       placeholder="ชื่อผู้ทำงาน"
+                                                       class="w-full px-2 py-1 border rounded text-xs focus:ring-1 focus:ring-blue-500">
+                                            </td>
+                                            <td class="py-3">
+                                                <div class="flex items-center space-x-2">
+                                                    <input type="file" 
+                                                           id="images-${task.id}" 
+                                                           multiple 
+                                                           accept="image/*"
+                                                           onchange="handleImageUpload('${task.id}', this.files)"
+                                                           class="hidden">
+                                                    <button onclick="document.getElementById('images-${task.id}').click()" 
+                                                            class="bg-blue-500 text-white px-2 py-1 rounded text-xs hover:bg-blue-600">
+                                                        📷 เพิ่มรูป
+                                                    </button>
+                                                    ${task.images.length > 0 ? `
+                                                        <button onclick="viewImages('${task.id}')" 
+                                                                class="bg-green-500 text-white px-2 py-1 rounded text-xs hover:bg-green-600">
+                                                            👁️ ดูรูป (${task.images.length})
+                                                        </button>
+                                                    ` : ''}
+                                                </div>
+                                            </td>
+                                            <td class="py-3">
+                                                <span class="px-2 py-1 rounded-full text-xs font-medium ${task.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}">
+                                                    ${task.status === 'completed' ? '✅ เสร็จเรียบร้อย' : '⏳ ยังไม่เสร็จ'}
+                                                </span>
+                                                ${task.completedAt ? `<div class="text-xs text-gray-500 mt-1">${new Date(task.completedAt).toLocaleString('th-TH')}</div>` : ''}
+                                                ${task.completedBy ? `<div class="text-xs text-gray-500">โดย: ${task.completedBy}</div>` : ''}
+                                            </td>
+                                            <td class="py-3 text-center">
+                                                <button onclick="toggleTaskStatus('${task.id}')" 
+                                                        class="px-3 py-1 rounded-lg text-xs font-medium transition-colors ${task.status === 'completed' ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-green-500 text-white hover:bg-green-600'}">
+                                                    ${task.status === 'completed' ? '↩️ ยกเลิก' : '✅ เสร็จ'}
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+                
+                grid.appendChild(roomCard);
+            });
+            
+            updateProgress();
+        }
+
+        function renderSummary() {
+            const statsContainer = document.getElementById('summaryStats');
+            const tableContainer = document.getElementById('summaryTable');
+            
+            const totalTasks = tasks.length;
+            const completedTasks = tasks.filter(t => t.status === 'completed').length;
+            const pendingTasks = totalTasks - completedTasks;
+            const progressPercent = (completedTasks / totalTasks) * 100;
+            
+            // Stats cards
+            statsContainer.innerHTML = `
+                <div class="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-4 rounded-lg">
+                    <div class="text-2xl font-bold">${totalTasks}</div>
+                    <div class="text-sm opacity-90">งานทั้งหมด</div>
+                </div>
+                <div class="bg-gradient-to-r from-green-500 to-green-600 text-white p-4 rounded-lg">
+                    <div class="text-2xl font-bold">${completedTasks}</div>
+                    <div class="text-sm opacity-90">เสร็จเรียบร้อย</div>
+                </div>
+                <div class="bg-gradient-to-r from-yellow-500 to-yellow-600 text-white p-4 rounded-lg">
+                    <div class="text-2xl font-bold">${pendingTasks}</div>
+                    <div class="text-sm opacity-90">ยังไม่เสร็จ</div>
+                </div>
+                <div class="bg-gradient-to-r from-purple-500 to-purple-600 text-white p-4 rounded-lg">
+                    <div class="text-2xl font-bold">${Math.round(progressPercent)}%</div>
+                    <div class="text-sm opacity-90">ความคืบหน้า</div>
+                </div>
+            `;
+            
+            // Summary table
+            const groupedByRoom = {};
+            tasks.forEach(task => {
+                const key = `${task.floor}-${task.room}`;
+                if (!groupedByRoom[key]) {
+                    groupedByRoom[key] = { completed: 0, total: 0, tasks: [] };
+                }
+                groupedByRoom[key].total++;
+                if (task.status === 'completed') {
+                    groupedByRoom[key].completed++;
+                }
+                groupedByRoom[key].tasks.push(task);
+            });
+            
+            tableContainer.innerHTML = `
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="text-left p-3 font-semibold">ห้อง</th>
+                            <th class="text-left p-3 font-semibold">ชั้น</th>
+                            <th class="text-center p-3 font-semibold">เสร็จ/ทั้งหมด</th>
+                            <th class="text-center p-3 font-semibold">ความคืบหน้า</th>
+                            <th class="text-left p-3 font-semibold">งานที่เหลือ</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${Object.keys(groupedByRoom).map(roomKey => {
+                            const [floor, room] = roomKey.split('-');
+                            const roomData = groupedByRoom[roomKey];
+                            const percent = (roomData.completed / roomData.total) * 100;
+                            const pendingTasks = roomData.tasks.filter(t => t.status === 'pending');
+                            
+                            return `
+                                <tr class="border-b hover:bg-gray-50">
+                                    <td class="p-3 font-medium">${room}</td>
+                                    <td class="p-3">${floor}</td>
+                                    <td class="p-3 text-center">
+                                        <span class="font-bold ${roomData.completed === roomData.total ? 'text-green-600' : 'text-yellow-600'}">
+                                            ${roomData.completed}/${roomData.total}
+                                        </span>
+                                    </td>
+                                    <td class="p-3">
+                                        <div class="flex items-center space-x-2">
+                                            <div class="flex-1 bg-gray-200 rounded-full h-2">
+                                                <div class="bg-gradient-to-r from-blue-500 to-green-500 h-2 rounded-full" style="width: ${percent}%"></div>
+                                            </div>
+                                            <span class="text-xs font-medium">${Math.round(percent)}%</span>
+                                        </div>
+                                    </td>
+                                    <td class="p-3">
+                                        ${pendingTasks.length > 0 ? 
+                                            pendingTasks.slice(0, 3).map(t => t.taskType).join(', ') + 
+                                            (pendingTasks.length > 3 ? ` และอีก ${pendingTasks.length - 3} งาน` : '')
+                                            : 'เสร็จหมดแล้ว ✅'
+                                        }
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        // Event handlers
+        function updateAssignee(taskId, assignee) {
+            const task = tasks.find(t => t.id === taskId);
+            if (task) {
+                task.assignee = assignee;
+                saveToStorage();
+            }
+        }
+
+        function handleImageUpload(taskId, files) {
+            const task = tasks.find(t => t.id === taskId);
+            if (task && files.length > 0) {
+                Array.from(files).forEach(file => {
+                    if (file.type.startsWith('image/') && task.images.length < 10) {
+                        const reader = new FileReader();
+                        reader.onload = function(e) {
+                            task.images.push({
+                                name: file.name,
+                                data: e.target.result,
+                                uploadedAt: new Date().toISOString()
+                            });
+                            saveToStorage();
+                            renderTasks();
+                        };
+                        reader.readAsDataURL(file);
+                    }
+                });
+            }
+        }
+
+        function viewImages(taskId) {
+            const task = tasks.find(t => t.id === taskId);
+            if (task && task.images.length > 0) {
+                const modal = document.getElementById('imageModal');
+                const content = document.getElementById('imageModalContent');
+                
+                content.innerHTML = `
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        ${task.images.map((img, index) => `
+                            <div class="border rounded-lg overflow-hidden">
+                                <img src="${img.data}" alt="${img.name}" class="w-full h-48 object-cover image-preview">
+                                <div class="p-2 bg-gray-50">
+                                    <div class="text-xs text-gray-600">${img.name}</div>
+                                    <div class="text-xs text-gray-500">${new Date(img.uploadedAt).toLocaleString('th-TH')}</div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+                
+                modal.classList.remove('hidden');
+            }
+        }
+
+        function closeImageModal() {
+            document.getElementById('imageModal').classList.add('hidden');
+        }
+
+        function toggleTaskStatus(taskId) {
+            const task = tasks.find(t => t.id === taskId);
+            if (task) {
+                if (task.status === 'pending') {
+                    if (!task.assignee.trim()) {
+                        alert('กรุณากรอกชื่อผู้ทำงานก่อนทำเครื่องหมายเสร็จ');
+                        return;
+                    }
+                    task.status = 'completed';
+                    task.completedAt = new Date().toISOString();
+                    task.completedBy = task.assignee;
+                } else {
+                    task.status = 'pending';
+                    task.completedAt = null;
+                    task.completedBy = '';
+                }
+                saveToStorage();
+                renderTasks();
+                if (currentTab === 'summary') {
+                    renderSummary();
+                }
+            }
+        }
+
+        function resetAllTasks() {
+    if (confirm('คุณแน่ใจหรือไม่ที่จะรีเซ็ตงานทั้งหมด? การดำเนินการนี้ไม่สามารถยกเลิกได้')) {
+        tasks.forEach(task => {
+            task.status = 'pending';
+            task.completedAt = null;
+            task.completedBy = '';
+            task.assignee = '';    // ลบชื่อผู้ทำงาน
+            task.images = [];      // ลบรูปภาพทั้งหมด
+        });
+        saveToStorage();
+        renderTasks();
+        if (currentTab === 'summary') {
+            renderSummary();
+        }
+    }
+}
+
+
+        function updateProgress() {
+            const totalTasks = tasks.length;
+            const completedTasks = tasks.filter(t => t.status === 'completed').length;
+            const progressPercent = (completedTasks / totalTasks) * 100;
+            
+            document.getElementById('progressBar').style.width = progressPercent + '%';
+            document.getElementById('progressText').textContent = Math.round(progressPercent) + '%';
+        }
+
+        function updateRoomFilter() {
+            const floorFilter = document.getElementById('floorFilter').value;
+            const roomFilter = document.getElementById('roomFilter');
+            
+            roomFilter.innerHTML = '<option value="">ทุกห้อง</option>';
+            
+            if (floorFilter) {
+                floors[floorFilter].forEach(room => {
+                    const option = document.createElement('option');
+                    option.value = room;
+                    option.textContent = `ห้อง ${room}`;
+                    roomFilter.appendChild(option);
+                });
+            } else {
+                Object.keys(floors).forEach(floor => {
+                    floors[floor].forEach(room => {
+                        const option = document.createElement('option');
+                        option.value = room;
+                        option.textContent = `ห้อง ${room} (ชั้น ${floor})`;
+                        roomFilter.appendChild(option);
+                    });
+                });
+            }
+        }
+
+        function showTab(tab) {
+            currentTab = tab;
+            
+            // Update tab buttons
+            document.getElementById('tasksTab').className = tab === 'tasks' 
+                ? 'px-6 py-2 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 transition-colors'
+                : 'px-6 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition-colors';
+            
+            document.getElementById('summaryTab').className = tab === 'summary' 
+                ? 'px-6 py-2 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 transition-colors'
+                : 'px-6 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition-colors';
+            
+            // Show/hide content
+            document.getElementById('tasksContent').classList.toggle('hidden', tab !== 'tasks');
+            document.getElementById('summaryContent').classList.toggle('hidden', tab !== 'summary');
+            
+            if (tab === 'tasks') {
+                renderTasks();
+            } else {
+                renderSummary();
+            }
+        }
+
+        // Event listeners
+        document.getElementById('floorFilter').addEventListener('change', function() {
+            updateRoomFilter();
+            renderTasks();
+        });
+
+        document.getElementById('roomFilter').addEventListener('change', renderTasks);
+        document.getElementById('statusFilter').addEventListener('change', renderTasks);
+
+        // Close modal when clicking outside
+        document.getElementById('imageModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeImageModal();
+            }
+        });
+
+        // Initialize app
+        initializeTasks();
+        updateRoomFilter();
+        renderTasks();
+    </script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'972fe456258f26cd',t:'MTc1NTgzOTcyMi4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
