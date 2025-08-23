@@ -469,6 +469,41 @@
             }
         }
 
+        function uploadFile(file, task) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const base64Data = e.target.result.split(",")[1]; // ตัด prefix ออก
+
+        const payload = {
+            filename: file.name,
+            mimetype: file.type,
+            file: base64Data
+        };
+
+        fetch("https://script.google.com/macros/s/AKfycbyUlQ3Zri9VYvaHBWlamnvWoAGNjjTLeBWjci_YrXV54ouPO_Qf43lvotx8kumBzhkaHQ/exec", {
+            method: "POST",
+            body: new URLSearchParams(payload) // ส่งเป็น x-www-form-urlencoded
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                task.images.push({
+                    name: data.name,
+                    url: data.url,
+                    uploadedAt: new Date().toISOString()
+                });
+                saveToStorage();
+                renderTasks();
+            } else {
+                alert("Upload ล้มเหลว: " + data.error);
+            }
+        })
+        .catch(err => alert("Upload Error: " + err));
+    };
+    reader.readAsDataURL(file);
+}
+
+
         function closeImageModal() {
             document.getElementById('imageModal').classList.add('hidden');
         }
