@@ -259,67 +259,116 @@ function renderTasks() {
 function renderSummary() {
     const statsContainer = document.getElementById('summaryStats');
     const tableContainer = document.getElementById('summaryTable');
-    const totalTasks = tasks.length;
-    const completedTasks = tasks.filter(t=>t.status==='completed').length;
-    const pendingTasks = totalTasks-completedTasks;
-    const progressPercent = totalTasks? (completedTasks/totalTasks)*100:0;
 
-    statsContainer.innerHTML=`
-        <div class="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-4 rounded-lg"><div class="text-2xl font-bold">${totalTasks}</div><div class="text-sm opacity-90">งานทั้งหมด</div></div>
-        <div class="bg-gradient-to-r from-green-500 to-green-600 text-white p-4 rounded-lg"><div class="text-2xl font-bold">${completedTasks}</div><div class="text-sm opacity-90">เสร็จเรียบร้อย</div></div>
-        <div class="bg-gradient-to-r from-yellow-500 to-yellow-600 text-white p-4 rounded-lg"><div class="text-2xl font-bold">${pendingTasks}</div><div class="text-sm
-opacity-90">ยังไม่เสร็จ</div></div>
-        <div class="bg-gradient-to-r from-purple-500 to-purple-600 text-white p-4 rounded-lg"><div class="text-2xl font-bold">${Math.round(progressPercent)}%</div><div class="text-sm opacity-90">ความคืบหน้า</div></div>
+    if (!tasks || tasks.length === 0) {
+        statsContainer.innerHTML = '<p class="text-center text-gray-500">ยังไม่มีข้อมูลงาน</p>';
+        tableContainer.innerHTML = '';
+        return;
+    }
+
+    const totalTasks = tasks.length;
+    const completedTasks = tasks.filter(t => t.status === 'completed').length;
+    const pendingTasks = totalTasks - completedTasks;
+    const progressPercent = (completedTasks / totalTasks) * 100;
+
+    statsContainer.innerHTML = `
+        <div class="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-4 rounded-lg">
+            <div class="text-2xl font-bold">${totalTasks}</div>
+            <div class="text-sm opacity-90">งานทั้งหมด</div>
+        </div>
+        <div class="bg-gradient-to-r from-green-500 to-green-600 text-white p-4 rounded-lg">
+            <div class="text-2xl font-bold">${completedTasks}</div>
+            <div class="text-sm opacity-90">เสร็จเรียบร้อย</div>
+        </div>
+        <div class="bg-gradient-to-r from-yellow-500 to-yellow-600 text-white p-4 rounded-lg">
+            <div class="text-2xl font-bold">${pendingTasks}</div>
+            <div class="text-sm opacity-90">ยังไม่เสร็จ</div>
+        </div>
+        <div class="bg-gradient-to-r from-purple-500 to-purple-600 text-white p-4 rounded-lg">
+            <div class="text-2xl font-bold">${Math.round(progressPercent)}%</div>
+            <div class="text-sm opacity-90">ความคืบหน้า</div>
+        </div>
     `;
 
-    let tableHTML = `<table class="w-full text-sm border-collapse border border-gray-300">
-        <thead>
-            <tr class="bg-gray-100">
-                <th class="py-2 px-3 border">ชั้น</th>
-                <th class="py-2 px-3 border">ห้อง</th>
-                <th class="py-2 px-3 border">งานทั้งหมด</th>
-                <th class="py-2 px-3 border">เสร็จเรียบร้อย</th>
-                <th class="py-2 px-3 border">ยังไม่เสร็จ</th>
-                <th class="py-2 px-3 border">ความคืบหน้า</th>
-            </tr>
-        </thead><tbody>`;
-
-    Object.keys(floors).forEach(floor=>{
-        floors[floor].forEach(room=>{
-            const roomTasks = tasks.filter(t=>t.floor==floor && t.room==room);
-            if(roomTasks.length===0) return;
-            const completed = roomTasks.filter(t=>t.status==='completed').length;
-            const pending = roomTasks.length - completed;
-            const percent = roomTasks.length ? Math.round((completed/roomTasks.length)*100) : 0;
-            tableHTML += `<tr class="border-b hover:bg-gray-50">
-                <td class="py-2 px-3 border">${floor}</td>
-                <td class="py-2 px-3 border">${room}</td>
-                <td class="py-2 px-3 border">${roomTasks.length}</td>
-                <td class="py-2 px-3 border text-green-600 font-medium">${completed}</td>
-                <td class="py-2 px-3 border text-yellow-600 font-medium">${pending}</td>
-                <td class="py-2 px-3 border">${percent}%</td>
-            </tr>`;
-        });
+    // ตารางสรุปตามห้อง
+    const groupedByRoom = {};
+    tasks.forEach(task => {
+        const key = `${task.floor}-${task.room}`;
+        if (!groupedByRoom[key]) groupedByRoom[key] = { completed: 0, total: 0, tasks: [] };
+        groupedByRoom[key].total++;
+        if (task.status === 'completed') groupedByRoom[key].completed++;
+        groupedByRoom[key].tasks.push(task);
     });
 
-    tableHTML += `</tbody></table>`;
-    tableContainer.innerHTML = tableHTML;
+    tableContainer.innerHTML = `
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="text-left p-3 font-semibold">ห้อง</th>
+                    <th class="text-left p-3 font-semibold">ชั้น</th>
+                    <th class="text-center p-3 font-semibold">เสร็จ/ทั้งหมด</th>
+                    <th class="text-center p-3 font-semibold">ความคืบหน้า</th>
+                    <th class="text-left p-3 font-semibold">งานที่เหลือ</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${Object.keys(groupedByRoom).map(roomKey => {
+                    const [floor, room] = roomKey.split('-');
+                    const roomData = groupedByRoom[roomKey];
+                    const percent = (roomData.completed / roomData.total) * 100;
+                    const pendingTasks = roomData.tasks.filter(t => t.status === 'pending');
+                    return `
+                        <tr class="border-b hover:bg-gray-50">
+                            <td class="p-3 font-medium">${room}</td>
+                            <td class="p-3">${floor}</td>
+                            <td class="p-3 text-center">
+                                <span class="font-bold ${roomData.completed === roomData.total ? 'text-green-600' : 'text-yellow-600'}">
+                                    ${roomData.completed}/${roomData.total}
+                                </span>
+                            </td>
+                            <td class="p-3">
+                                <div class="flex items-center space-x-2">
+                                    <div class="flex-1 bg-gray-200 rounded-full h-2">
+                                        <div class="bg-gradient-to-r from-blue-500 to-green-500 h-2 rounded-full" style="width: ${percent}%"></div>
+                                    </div>
+                                    <span class="text-xs font-medium">${Math.round(percent)}%</span>
+                                </div>
+                            </td>
+                            <td class="p-3">
+                                ${pendingTasks.length > 0 ? 
+                                    pendingTasks.slice(0, 3).map(t => t.taskType).join(', ') + 
+                                    (pendingTasks.length > 3 ? ` และอีก ${pendingTasks.length - 3} งาน` : '')
+                                    : 'เสร็จหมดแล้ว ✅'
+                                }
+                            </td>
+                        </tr>
+                    `;
+                }).join('')}
+            </tbody>
+        </table>
+    `;
 }
+
 
 // Tab switch
-function showTab(tab){
+function showTab(tab) {
     currentTab = tab;
-    document.getElementById('tasksContent').classList.toggle('hidden',tab!=='tasks');
-    document.getElementById('summaryContent').classList.toggle('hidden',tab!=='summary');
 
-    document.getElementById('tasksTab').classList.toggle('bg-blue-500 text-white',tab==='tasks');
-    document.getElementById('tasksTab').classList.toggle('bg-gray-200 text-gray-700',tab!=='tasks');
-    document.getElementById('summaryTab').classList.toggle('bg-blue-500 text-white',tab==='summary');
-    document.getElementById('summaryTab').classList.toggle('bg-gray-200 text-gray-700',tab!=='summary');
+    document.getElementById('tasksTab').className = tab === 'tasks' 
+        ? 'px-6 py-2 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 transition-colors'
+        : 'px-6 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition-colors';
 
-    if(tab==='tasks') renderTasks();
+    document.getElementById('summaryTab').className = tab === 'summary' 
+        ? 'px-6 py-2 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 transition-colors'
+        : 'px-6 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition-colors';
+
+    document.getElementById('tasksContent').classList.toggle('hidden', tab !== 'tasks');
+    document.getElementById('summaryContent').classList.toggle('hidden', tab !== 'summary');
+
+    if (tab === 'tasks') renderTasks();
     else renderSummary();
 }
+
 
 // Progress bar update
 function updateProgress(){
