@@ -20,13 +20,15 @@
         <div class="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
             <div class="text-center mb-8">
                 <h1 class="text-3xl font-bold text-gray-800 mb-2">🏨 ระบบติดตามงานแม่บ้าน</h1>
+                <div id="tasksContainerLogin"></div>
+
                 <p class="text-gray-600">เลือกประเภทผู้ใช้งาน</p>
             </div>
             
             <div class="space-y-4">
                 <button id="housekeeperBtn">🧹 แม่บ้าน</button>
-<button id="inspectorBtn">👨‍💼 ผู้ตรวจสอบ</button>
-
+                <button id="inspectorBtn">👨‍💼 ผู้ตรวจสอบ</button>
+                
             </div>
         </div>
     </div>
@@ -53,6 +55,7 @@
                 <button type="button" onclick="backToLogin()" class="w-full bg-gray-300 hover:bg-gray-400 text-gray-700 font-semibold py-3 px-6 rounded-lg transition duration-200">
                     กลับ
                 </button>
+                
             </form>
         </div>
     </div>
@@ -87,6 +90,9 @@
                     <button onclick="showSummaryView()" id="summaryTab" class="py-4 px-1 border-b-2 border-transparent font-medium text-sm text-gray-500 hover:text-gray-700">
                         📊 สรุปงาน
                     </button>
+                    
+</button>
+
                 </div>
             </div>
         </nav>
@@ -167,8 +173,11 @@
 
    <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js";
-import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-storage.js";
-import { getFirestore, collection, doc, getDocs, setDoc, writeBatch, onSnapshot } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js";
+import { getFirestore, collection, doc, getDocs, setDoc, writeBatch, onSnapshot } 
+    from "https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js";
+import { getStorage, ref, uploadBytes, getDownloadURL } 
+    from "https://www.gstatic.com/firebasejs/12.2.1/firebase-storage.js";
+
 
 
 const firebaseConfig = {
@@ -188,27 +197,185 @@ const storage = getStorage(app);
 const tasksCollection = collection(db, "housekeepingTasks");
 
 
+function listenTasksRealtime() {
+    const tasksCollection = collection(db, "housekeepingTasks");
+    onSnapshot(tasksCollection, (querySnapshot) => {
+        window.allTasks = [];
+        querySnapshot.forEach(doc => window.allTasks.push({ id: doc.id, ...doc.data() }));
+        renderTasks(); // อัปเดต UI อัตโนมัติทั้งแม่บ้านและผู้ตรวจสอบ
+        generateSummary(); // อัปเดตสรุปงานด้วย
+    });
+}
+
+async function resetTask(taskId) {
+    const userRole = localStorage.getItem('userRole'); // สมมติบันทึก role ไว้
+   if(userRole === 'checker') {
+    // แสดงปุ่มรีเซต
+    resetButton.style.display = 'inline-block';
+} else {
+    resetButton.style.display = 'none';
+}
+
+
+    const confirmReset = confirm("คุณแน่ใจหรือไม่ว่าต้องการรีเซตงานนี้?");
+    if (!confirmReset) return;
+
+    try {
+        await setDoc(doc(db, "Tasks", taskId), { 
+    status: "pending", 
+    assignedTo: "", 
+    checkedBy: "", 
+    checkedStatus: "pending", 
+    images: [] 
+}, { merge: true });
+
+        alert("รีเซตงานเรียบร้อยแล้ว!");
+    } catch (err) {
+        console.error(err);
+        alert("เกิดข้อผิดพลาดในการรีเซตงาน");
+    }
+}
+
+
+// ดึงงานจาก Firestore ทุกครั้งที่เปิดหน้า
+async function loadTasks() {
+    const tasksContainer = document.getElementById("tasksContainer");
+    if (!tasksContainer) return; // ป้องกัน null
+    tasksContainer.innerHTML = ""; // ล้างก่อน
+
+    try {
+        const querySnapshot = await getDocs(collection(db, "housekeepingTasks"));
+        const tasks = [];
+        querySnapshot.forEach(docSnap => {
+            tasks.push(docSnap.data());
+        });
+
+        // จัดกลุ่มงานตามชั้นและห้อง
+        const groupedTasks = {};
+        tasks.forEach(task => {
+            if (!groupedTasks[task.floor]) groupedTasks[task.floor] = {};
+            if (!groupedTasks[task.floor][task.room]) groupedTasks[task.floor][task.room] = [];
+            groupedTasks[task.floor][task.room].push(task);
+        });
+
+        // สร้าง element สำหรับแต่ละชั้นและห้อง
+        Object.keys(groupedTasks).sort().forEach(floor => {
+            const floorDiv = document.createElement("div");
+            floorDiv.className = "bg-white rounded-lg shadow-md overflow-hidden mb-6";
+
+            const floorHeader = document.createElement("div");
+            floorHeader.className = "bg-gradient-to-r from-blue-500 to-blue-600 text-white p-4";
+            floorHeader.innerHTML = `<h2 class="text-xl font-bold">🏢 ชั้น ${floor}</h2>`;
+            floorDiv.appendChild(floorHeader);
+
+            const floorContent = document.createElement("div");
+            floorContent.className = "p-6 grid grid-cols-1 lg:grid-cols-2 gap-6";
+
+            Object.keys(groupedTasks[floor]).sort().forEach(room => {
+                const roomDiv = document.createElement("div");
+                roomDiv.className = "border border-gray-200 rounded-lg overflow-hidden";
+
+                const roomHeader = document.createElement("div");
+                roomHeader.className = "bg-gray-50 px-4 py-3 border-b";
+                roomHeader.innerHTML = `<h3 class="font-semibold text-gray-800">🚪 ห้อง ${room}</h3>`;
+                roomDiv.appendChild(roomHeader);
+
+                const table = document.createElement("table");
+                table.className = "w-full text-sm";
+                table.innerHTML = `
+                    <thead class="bg-gray-100">
+                        <tr>
+                            <th class="px-4 py-2 text-left">งาน</th>
+                            <th class="px-4 py-2 text-center">สถานะ</th>
+                            <th class="px-4 py-2 text-center">การดำเนินการ</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                `;
+                roomDiv.appendChild(table);
+
+                const tbody = table.querySelector("tbody");
+                groupedTasks[floor][room].forEach(task => {
+                    const tr = document.createElement("tr");
+                    tr.className = getTaskRowClass(task.status);
+
+                    const tdTask = document.createElement("td");
+                    tdTask.className = "px-4 py-3 font-medium";
+                    tdTask.textContent = task.taskType;
+
+                    const tdStatus = document.createElement("td");
+                    tdStatus.className = "px-4 py-3 text-center";
+                    const statusSpan = document.createElement("span");
+                    statusSpan.className = `px-2 py-1 rounded-full text-xs font-medium ${getStatusClass(task.status)}`;
+                    statusSpan.textContent = getStatusText(task.status);
+                    tdStatus.appendChild(statusSpan);
+
+                    const tdAction = document.createElement("td");
+                    tdAction.className = "px-4 py-3 text-center";
+                    const actionDiv = document.createElement("div");
+                    actionDiv.className = "flex justify-center space-x-2";
+
+                    // เงื่อนไขแสดงปุ่ม
+                    if (task.status === "pending" && window.currentUser?.type === "housekeeper") {
+                        const btn = document.createElement("button");
+                        btn.className = "bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-xs transition duration-200";
+                        btn.textContent = "📝 ทำงาน";
+                        btn.onclick = () => openTaskModal(task.id);
+                        actionDiv.appendChild(btn);
+                    }
+
+                    if (task.status === "completed" && window.currentUser?.type === "inspector") {
+                        const btn = document.createElement("button");
+                        btn.className = "bg-orange-500 hover:bg-orange-600 text-white px-3 py-1 rounded text-xs transition duration-200";
+                        btn.textContent = "🔍 ตรวจสอบ";
+                        btn.onclick = () => openInspectionModal(task.id);
+                        actionDiv.appendChild(btn);
+                    }
+
+                    if ((task.status === "approved" || task.status === "rejected") && task.images.length > 0) {
+                        const btn = document.createElement("button");
+                        btn.className = "bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-xs transition duration-200";
+                        btn.textContent = "🖼️ ดูรูป";
+                        btn.onclick = () => viewTaskImages(task.id);
+                        actionDiv.appendChild(btn);
+                    }
+
+                    tdAction.appendChild(actionDiv);
+
+                    tr.appendChild(tdTask);
+                    tr.appendChild(tdStatus);
+                    tr.appendChild(tdAction);
+
+                    tbody.appendChild(tr);
+                });
+
+                floorContent.appendChild(roomDiv);
+            });
+
+            floorDiv.appendChild(floorContent);
+            tasksContainer.appendChild(floorDiv);
+        });
+
+    } catch (error) {
+        console.error("Error loading tasks:", error);
+    }
+}
 
 
 async function uploadImage(file, path) {
     const storageRef = ref(storage, path); 
     const snapshot = await uploadBytes(storageRef, file);
-    const url = await uploadImage(imageFiles[i], `housekeeping/${taskId}/img_${Date.now()}_${i}`);
-
-    
+    const url = await getDownloadURL(snapshot.ref);
     return url;
 }
 
 
- window.completeTask = async function(event, taskId) {
+
+// แม่บ้านบันทึกงาน
+window.completeTask = async function(event, taskId) {
     event.preventDefault();
     const assignee = document.getElementById('assignee').value;
     const imageFiles = document.getElementById('taskImages').files;
-
-    if (imageFiles.length > 10) {
-        alert('เลือกรูปได้สูงสุด 10 รูป');
-        return;
-    }
 
     const images = [];
     for (let i = 0; i < imageFiles.length; i++) {
@@ -216,21 +383,17 @@ async function uploadImage(file, path) {
         images.push(url);
     }
 
-    try {
-        const taskRef = doc(tasksCollection, taskId);
-        await setDoc(taskRef, {
-            status: 'completed',
-            assignee: assignee,
-            images: images,
-            completedAt: new Date()
-        }, { merge: true });
+    const taskRef = doc(tasksCollection, taskId);
+    await setDoc(taskRef, {
+        status: 'completed',
+        assignee,
+        images,
+        completedAt: new Date()
+    }, { merge: true });
 
-        closeModal();
-        alert('บันทึกงานเสร็จเรียบร้อย!');
-    } catch (error) {
-        console.error('Error completing task:', error);
-        alert('เกิดข้อผิดพลาดในการบันทึก');
-    }
+    closeModal();
+    alert('บันทึกงานเสร็จเรียบร้อย!');
+    // ไม่ต้องเรียก renderTasks() เพราะ onSnapshot จะอัปเดตอัตโนมัติ
 };
 
 
@@ -271,7 +434,7 @@ window.showInspectorLogin = function() {
 };
 
 const inspectors = [
-    { email: 'admin@admin.com', password: '123456', name: 'ผู้ตรวจสอบ 1' },
+    { email: 'a@admin.com', password: '123456', name: 'ผู้ตรวจสอบ 1' },
     { email: 'inspector2@example.com', password: 'abcdef', name: 'ผู้ตรวจสอบ 2' }
 ];
         window.loginInspector = function(event) {
@@ -286,8 +449,11 @@ const inspectors = [
         showMainApp();
     } else {
         alert('อีเมลหรือรหัสผ่านไม่ถูกต้อง');
+        
     }
+    
 };
+
 
         window.backToLogin = function() {
             document.getElementById('inspectorLoginForm').classList.add('hidden');
@@ -324,75 +490,52 @@ const inspectors = [
 
 
         // Initialize tasks in database
-        async function initializeTasks() {
-            const batch = writeBatch(db);
-            
-            for (const floor of Object.keys(roomConfig)) {
-                for (const room of roomConfig[floor]) {
-                    for (const taskType of taskTypes) {
-                        const taskId = `${floor}-${room}-${taskType}`;
-                        const taskRef = doc(tasksCollection, taskId);
-                        
-                        const taskData = {
-                            id: taskId,
-                            floor: parseInt(floor),
-                            room: room,
-                            taskType: taskType,
-                            status: 'pending',
-                            assignee: '',
-                            images: ["https://firebasestorage.googleapis.com/v0/b/your-app-id.appspot.com/o/housekeeping%2Froom101%2Fimg1.jpg?alt=media"],
-                            completedAt: null,
-                            inspectedAt: null,
-                            inspector: '',
-                            inspectionResult: '',
-                            createdAt: new Date()
-                        };
-                        
-                        batch.set(taskRef, taskData, { merge: true });
-                    }
-                }
-            }
-            
-            try {
-                await batch.commit();
-            } catch (error) {
-                console.error('Error initializing tasks:', error);
+    async function initializeTasks() {
+    const querySnapshot = await getDocs(tasksCollection);
+    if (!querySnapshot.empty) return; // ถ้ามีข้อมูลอยู่แล้ว ไม่ต้องสร้างใหม่
+
+    const batch = writeBatch(db);
+    for (const floor of Object.keys(roomConfig)) {
+        for (const room of roomConfig[floor]) {
+            for (const taskType of taskTypes) {
+                const taskId = `${floor}-${room}-${taskType}`;
+                const taskRef = doc(tasksCollection, taskId);
+                batch.set(taskRef, {
+                    id: taskId,
+                    floor: parseInt(floor),
+                    room: room,
+                    taskType: taskType,
+                    status: 'pending',
+                    assignee: '',
+                    images: [],
+                    completedAt: null,
+                    inspectedAt: null,
+                    inspector: '',
+                    inspectionResult: '',
+                    createdAt: new Date()
+                }, { merge: true });
             }
         }
+    }
+    await batch.commit();
+}
 
         // Load tasks from database
-        async function loadTasks() {
-            try {
-                const querySnapshot = await getDocs(tasksCollection);
-                window.allTasks = [];
-                querySnapshot.forEach((doc) => {
-                    window.allTasks.push(doc.data());
-                });
-                renderTasks();
-            } catch (error) {
-                console.error('Error loading tasks:', error);
-            }
-        }
+       
 
-  function listenTasksRealtime() {
-    onSnapshot(tasksCollection, (querySnapshot) => {
-        window.allTasks = [];
-        querySnapshot.forEach(doc => window.allTasks.push(doc.data()));
-        renderTasks(); // อัพเดทตารางทันที
-    }, (error) => {
-        console.error('Error listening to tasks:', error);
-    });
-}
+
 
         // Render tasks
         function renderTasks(tasks = window.allTasks) {
     const container = document.getElementById('tasksContainer');
     const groupedTasks = groupTasksByFloorAndRoom(tasks);
+    
             
             container.innerHTML = '';
             
             Object.keys(groupedTasks).sort().forEach(floor => {
                 const floorDiv = document.createElement('div');
+                
                 floorDiv.className = 'bg-white rounded-lg shadow-md overflow-hidden';
                 
                 floorDiv.innerHTML = `
@@ -425,24 +568,26 @@ const inspectors = [
                                                             </span>
                                                         </td>
                                                         <td class="px-4 py-3 text-center">
-                                                            <div class="flex justify-center space-x-2">
-                                                                ${task.status === 'pending' && window.currentUser.type === 'housekeeper' ? `
-                                                                    <button onclick="openTaskModal('${task.id}')" class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-xs transition duration-200">
-                                                                        📝 ทำงาน
-                                                                    </button>
-                                                                ` : ''}
-                                                                ${task.status === 'completed' && window.currentUser.type === 'inspector' ? `
-                                                                    <button onclick="openInspectionModal('${task.id}')" class="bg-orange-500 hover:bg-orange-600 text-white px-3 py-1 rounded text-xs transition duration-200">
-                                                                        🔍 ตรวจสอบ
-                                                                    </button>
-                                                                ` : ''}
-                                                                ${(task.status === 'approved' || task.status === 'rejected') && task.images.length > 0 ? `
-                                                                    <button onclick="viewTaskImages('${task.id}')" class="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-xs transition duration-200">
-                                                                        🖼️ ดูรูป
-                                                                    </button>
-                                                                ` : ''}
-                                                            </div>
-                                                        </td>
+    <div class="flex justify-center space-x-2">
+        ${task.status === 'pending' && window.currentUser.type === 'housekeeper' ? `
+            <button onclick="openTaskModal('${task.id}')" class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-xs transition duration-200">
+                📝 ทำงาน
+            </button>
+        ` : ''}
+        ${task.status === 'completed' && window.currentUser.type === 'inspector' ? `
+            <button onclick="openInspectionModal('${task.id}')" class="bg-orange-500 hover:bg-orange-600 text-white px-3 py-1 rounded text-xs transition duration-200">
+                🔍 ตรวจสอบ
+            </button>
+        ` : ''}
+        ${task.status === 'approved' ? `
+            <span class="px-2 py-1 rounded-full text-xs font-medium bg-green-200 text-green-800">✅ ผ่านการตรวจสอบ</span>
+        ` : ''}
+        ${task.status === 'rejected' ? `
+            <span class="px-2 py-1 rounded-full text-xs font-medium bg-red-200 text-red-800">❌ ไม่ผ่านการตรวจสอบ</span>
+        ` : ''}
+    </div>
+</td>
+
                                                     </tr>
                                                 `).join('')}
                                             </tbody>
@@ -470,32 +615,27 @@ const inspectors = [
 
        
 
-        function getTaskRowClass(status) {
-            switch (status) {
-                case 'completed': return 'task-completed';
-                case 'approved': return 'task-approved';
-                case 'rejected': return 'task-rejected';
-                default: return 'task-pending';
-            }
-        }
+function getTaskRowClass(status) {
+  if(status === "completed") return "bg-green-50";
+  if(status === "pending") return "bg-yellow-50";
+  if(status === "inProgress") return "bg-blue-50";
+  return "";
+}
 
-        function getStatusClass(status) {
-            switch (status) {
-                case 'completed': return 'bg-yellow-100 text-yellow-800';
-                case 'approved': return 'bg-green-100 text-green-800';
-                case 'rejected': return 'bg-red-100 text-red-800';
-                default: return 'bg-gray-100 text-gray-800';
-            }
-        }
+function getStatusClass(status) {
+  if(status === "completed") return "bg-green-200 text-green-800";
+  if(status === "pending") return "bg-yellow-200 text-yellow-800";
+  if(status === "inProgress") return "bg-blue-200 text-blue-800";
+  return "bg-gray-200 text-gray-800";
+}
 
-        function getStatusText(status) {
-            switch (status) {
-                case 'completed': return 'เสร็จแล้ว';
-                case 'approved': return 'ผ่านการตรวจสอบ';
-                case 'rejected': return 'ไม่ผ่านการตรวจสอบ';
-                default: return 'ยังไม่เสร็จ';
-            }
-        }
+function getStatusText(status) {
+  if(status === "completed") return "เสร็จแล้ว";
+  if(status === "pending") return "รอดำเนินการ";
+  if(status === "inProgress") return "กำลังทำ";
+  return "ตรวจสอบแล้ว";
+}
+
 
         // Modal functions
         window.openTaskModal = function(taskId) {
@@ -578,46 +718,11 @@ const inspectors = [
             document.getElementById('taskModal').classList.remove('hidden');
         };
 
-     window.completeTask = async function(event, taskId) {
-    event.preventDefault();
-    const assignee = document.getElementById('assignee').value;
-    const imageFiles = document.getElementById('taskImages').files;
-    
-    if (imageFiles.length > 10) {
-        alert('เลือกรูปได้สูงสุด 10 รูป');
-        return;
-    }
-
-    const images = [];
-for (let i = 0; i < imageFiles.length; i++) {
-    const url = await uploadImage(imageFiles[i], `housekeeping/${taskId}/img${i+1}`);
-    images.push(url);
-}
-
-
-
-    try {
-        const taskRef = doc(tasksCollection, taskId);
-         await setDoc(taskRef, {
-        status: 'completed',
-        assignee: assignee,
-        images: images,
-        completedAt: new Date()
-    }, { merge: true });
-
-        closeModal();
-        alert('บันทึกงานเสร็จเรียบร้อย!');
-        // ไม่ต้องเรียก loadTasks() อีก เพราะ onSnapshot จะอัพเดทให้เอง
-    } catch (error) {
-        console.error('Error completing task:', error);
-        alert('เกิดข้อผิดพลาดในการบันทึก');
-    }
-};
-
-       window.inspectTask = async function(event, taskId) {
+ 
+window.inspectTask = async function(event, taskId) {
     event.preventDefault();
     const formData = new FormData(event.target);
-    const result = formData.get('inspectionResult');
+    const result = formData.get('inspectionResult'); // "approved" หรือ "rejected"
 
     try {
         const taskRef = doc(tasksCollection, taskId);
@@ -627,14 +732,24 @@ for (let i = 0; i < imageFiles.length; i++) {
             inspectedAt: new Date()
         }, { merge: true });
 
+        // อัปเดต local state ทันที
+        const taskIndex = window.allTasks.findIndex(t => t.id === taskId);
+        if (taskIndex !== -1) {
+            window.allTasks[taskIndex].status = result;
+            window.allTasks[taskIndex].inspector = window.currentUser.email;
+            window.allTasks[taskIndex].inspectedAt = new Date();
+        }
+
+        renderTasks(); // รีเฟรช UI ทันที
         closeModal();
         alert('บันทึกผลการตรวจสอบเรียบร้อย!');
-        // ไม่ต้องเรียก loadTasks() อีก
     } catch (error) {
         console.error('Error inspecting task:', error);
         alert('เกิดข้อผิดพลาดในการบันทึก');
     }
 };
+
+
 
         window.viewTaskImages = function(taskId) {
             const task = window.allTasks.find(t => t.id === taskId);
