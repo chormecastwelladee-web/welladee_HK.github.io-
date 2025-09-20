@@ -6,6 +6,8 @@
     <title>ระบบติดตามงานแม่บ้าน</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://widget.cloudinary.com/v2.0/global/all.js" type="text/javascript"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
@@ -34,6 +36,7 @@
             </div>
         </div>
     </div>
+    
 
     <!-- Inspector Login Form -->
     <div id="inspectorLoginForm" class="hidden min-h-screen flex items-center justify-center p-4">
@@ -135,14 +138,11 @@
         </div>
 
         <!-- Summary View -->
-        <div id="summaryView" class="hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-            <div class="bg-white rounded-lg shadow-md p-6">
-                <h3 class="text-2xl font-bold mb-6">📊 สรุปงานประจำเดือน</h3>
-                <div id="summaryContent">
-                    <!-- Summary content will be generated here -->
-                </div>
-            </div>
-        </div>
+        <div id="summaryView" class="hidden">
+    <div id="summaryContent"></div>
+    <canvas id="tasksPieChart" width="400" height="400"></canvas>
+</div>
+
     </div>
 
     <!-- Task Modal -->
@@ -172,6 +172,13 @@
             </div>
         </div>
     </div>
+    <div id="loadingModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+    <div class="bg-white p-6 rounded-lg shadow-lg flex flex-col items-center space-y-4">
+        
+        <span class="font-medium text-gray-700">กำลังบันทึก</span>
+    </div>
+</div>
+
 
    <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js";
@@ -361,6 +368,10 @@ async function loadTasks() {
 // แม่บ้านบันทึกงาน
 window.completeTask = async function(event, taskId) {
     event.preventDefault();
+
+    // แสดง spinner
+    document.getElementById('loadingModal').classList.remove('hidden');
+
     const assignee = document.getElementById('assignee').value;
     const imageFiles = document.getElementById('taskImages').files;
 
@@ -374,13 +385,17 @@ window.completeTask = async function(event, taskId) {
     await setDoc(taskRef, {
         status: 'completed',
         assignee,
-        images, // เก็บ URL ของ Cloudinary
+        images, 
         completedAt: new Date()
     }, { merge: true });
 
+    // ซ่อน spinner
+    document.getElementById('loadingModal').classList.add('hidden');
+
     closeModal();
-    alert('บันทึกงานเสร็จเรียบร้อย!');
+    
 };
+
 
 
 
@@ -788,7 +803,7 @@ window.inspectTask = async function(event, taskId) {
 
         renderTasks(); // รีเฟรช UI ทันที
         closeModal();
-        alert('บันทึกผลการตรวจสอบเรียบร้อย!');
+       
     } catch (error) {
         console.error('Error inspecting task:', error);
         alert('เกิดข้อผิดพลาดในการบันทึก');
@@ -963,6 +978,10 @@ window.inspectTask = async function(event, taskId) {
                         <div class="text-gray-600">ยังไม่เสร็จ</div>
                     </div>
                 </div>
+                <div class="w-72 h-72 mx-auto"> <!-- w-72 h-72 = ขนาดประมาณ 288px -->
+    <canvas id="tasksPieChart"></canvas>
+</div>
+
                 
                 <div class="bg-gradient-to-r from-blue-500 to-purple-600 text-white p-8 rounded-lg text-center mb-8">
                     <div class="text-4xl font-bold mb-2">${completionRate}%</div>
@@ -1013,7 +1032,53 @@ window.inspectTask = async function(event, taskId) {
                     </div>
                 </div>
             `;
+            renderPieChart();
         }
+
+        let tasksPieChart = null;
+
+function renderPieChart() {
+    const completedTasks = window.allTasks.filter(task => task.status === 'completed').length;
+    const approvedTasks = window.allTasks.filter(task => task.status === 'approved').length;
+    const rejectedTasks = window.allTasks.filter(task => task.status === 'rejected').length;
+    const pendingTasks = window.allTasks.filter(task => task.status === 'pending').length;
+
+    const data = {
+        labels: ['ยังไม่เสร็จ', 'เสร็จแล้ว', 'ผ่านการตรวจสอบ', 'ไม่ผ่านการตรวจสอบ'],
+        datasets: [{
+            data: [pendingTasks, completedTasks, approvedTasks, rejectedTasks],
+            backgroundColor: ['#FACC15', '#34D399', '#10B981', '#EF4444'],
+            borderWidth: 1
+        }]
+    };
+
+    const config = {
+        type: 'pie',
+        data: data,
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const label = context.label || '';
+                            const value = context.parsed || 0;
+                            return `${label}: ${value} งาน`;
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    const ctx = document.getElementById('tasksPieChart').getContext('2d');
+    if(tasksPieChart) tasksPieChart.destroy(); // ล้าง chart เดิมก่อน
+    tasksPieChart = new Chart(ctx, config);
+}
+
 
         // Monthly reset function
         async function checkMonthlyReset() {
