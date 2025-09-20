@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ระบบติดตามงานแม่บ้าน</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://widget.cloudinary.com/v2.0/global/all.js" type="text/javascript"></script>
+
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
         body { font-family: 'Sarabun', sans-serif; }
@@ -207,32 +209,24 @@ function listenTasksRealtime() {
     });
 }
 
-async function resetTask(taskId) {
-    const userRole = localStorage.getItem('userRole'); // สมมติบันทึก role ไว้
-   if(userRole === 'checker') {
-    // แสดงปุ่มรีเซต
-    resetButton.style.display = 'inline-block';
-} else {
-    resetButton.style.display = 'none';
-}
 
-
-    const confirmReset = confirm("คุณแน่ใจหรือไม่ว่าต้องการรีเซตงานนี้?");
-    if (!confirmReset) return;
+// อัปโหลดไฟล์ไป Cloudinary
+async function uploadImageToCloudinary(file) {
+    const url = "https://api.cloudinary.com/v1_1/duqvqdrwd/upload";
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("upload_preset", "unsigned_preset"); // สร้าง upload preset ใน Cloudinary
 
     try {
-        await setDoc(doc(db, "Tasks", taskId), { 
-    status: "pending", 
-    assignedTo: "", 
-    checkedBy: "", 
-    checkedStatus: "pending", 
-    images: [] 
-}, { merge: true });
-
-        alert("รีเซตงานเรียบร้อยแล้ว!");
-    } catch (err) {
-        console.error(err);
-        alert("เกิดข้อผิดพลาดในการรีเซตงาน");
+        const response = await fetch(url, {
+            method: "POST",
+            body: formData
+        });
+        const data = await response.json();
+        return data.secure_url; // จะได้ URL ของรูป
+    } catch (error) {
+        console.error("Upload error:", error);
+        return null;
     }
 }
 
@@ -362,13 +356,6 @@ async function loadTasks() {
 }
 
 
-async function uploadImage(file, path) {
-    const storageRef = ref(storage, path); 
-    const snapshot = await uploadBytes(storageRef, file);
-    const url = await getDownloadURL(snapshot.ref);
-    return url;
-}
-
 
 
 // แม่บ้านบันทึกงาน
@@ -379,22 +366,22 @@ window.completeTask = async function(event, taskId) {
 
     const images = [];
     for (let i = 0; i < imageFiles.length; i++) {
-        const url = await uploadImage(imageFiles[i], `housekeeping/${taskId}/img${i+1}`);
-        images.push(url);
+        const url = await uploadImageToCloudinary(imageFiles[i]);
+        if (url) images.push(url);
     }
 
     const taskRef = doc(tasksCollection, taskId);
     await setDoc(taskRef, {
         status: 'completed',
         assignee,
-        images,
+        images, // เก็บ URL ของ Cloudinary
         completedAt: new Date()
     }, { merge: true });
 
     closeModal();
     alert('บันทึกงานเสร็จเรียบร้อย!');
-    // ไม่ต้องเรียก renderTasks() เพราะ onSnapshot จะอัปเดตอัตโนมัติ
 };
+
 
 
         // Global variables
@@ -481,7 +468,7 @@ const inspectors = [
         }
 
         // Initialize app
-       async function initAppData() {
+async function initAppData() {
     await initializeTasks(); // สร้างงานครั้งแรก
     listenTasksRealtime();   // ใช้ realtime listener เพียงตัวเดียว
     updateRoomFilter();
@@ -522,96 +509,155 @@ const inspectors = [
 
         // Load tasks from database
        
+document.getElementById('housekeeperBtn').addEventListener('click', () => {
+    loginAsHousekeeper();
+});
 
-
+document.getElementById('inspectorBtn').addEventListener('click', () => {
+    showInspectorLogin();
+});
 
         // Render tasks
-        function renderTasks(tasks = window.allTasks) {
+function renderTasks(tasks = window.allTasks) {
     const container = document.getElementById('tasksContainer');
+    if (!container) return;
+    container.innerHTML = '';
     const groupedTasks = groupTasksByFloorAndRoom(tasks);
-    
-            
-            container.innerHTML = '';
-            
-            Object.keys(groupedTasks).sort().forEach(floor => {
-                const floorDiv = document.createElement('div');
-                
-                floorDiv.className = 'bg-white rounded-lg shadow-md overflow-hidden';
-                
-                floorDiv.innerHTML = `
-                    <div class="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-4">
-                        <h2 class="text-xl font-bold">🏢 ชั้น ${floor}</h2>
-                    </div>
-                    <div class="p-6">
-                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            ${Object.keys(groupedTasks[floor]).sort().map(room => `
-                                <div class="border border-gray-200 rounded-lg overflow-hidden">
-                                    <div class="bg-gray-50 px-4 py-3 border-b">
-                                        <h3 class="font-semibold text-gray-800">🚪 ห้อง ${room}</h3>
-                                    </div>
-                                    <div class="overflow-x-auto">
-                                        <table class="w-full text-sm">
-                                            <thead class="bg-gray-100">
-                                                <tr>
-                                                    <th class="px-4 py-2 text-left">งาน</th>
-                                                    <th class="px-4 py-2 text-center">สถานะ</th>
-                                                    <th class="px-4 py-2 text-center">การดำเนินการ</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                ${groupedTasks[floor][room].map(task => `
-                                                    <tr class="${getTaskRowClass(task.status)}">
-                                                        <td class="px-4 py-3 font-medium">${task.taskType}</td>
-                                                        <td class="px-4 py-3 text-center">
-                                                            <span class="px-2 py-1 rounded-full text-xs font-medium ${getStatusClass(task.status)}">
-                                                                ${getStatusText(task.status)}
-                                                            </span>
-                                                        </td>
-                                                        <td class="px-4 py-3 text-center">
-    <div class="flex justify-center space-x-2">
-        ${task.status === 'pending' && window.currentUser.type === 'housekeeper' ? `
-            <button onclick="openTaskModal('${task.id}')" class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-xs transition duration-200">
-                📝 ทำงาน
-            </button>
-        ` : ''}
-        ${task.status === 'completed' && window.currentUser.type === 'inspector' ? `
-            <button onclick="openInspectionModal('${task.id}')" class="bg-orange-500 hover:bg-orange-600 text-white px-3 py-1 rounded text-xs transition duration-200">
-                🔍 ตรวจสอบ
-            </button>
-        ` : ''}
-        ${task.status === 'approved' ? `
-            <span class="px-2 py-1 rounded-full text-xs font-medium bg-green-200 text-green-800">✅ ผ่านการตรวจสอบ</span>
-        ` : ''}
-        ${task.status === 'rejected' ? `
-            <span class="px-2 py-1 rounded-full text-xs font-medium bg-red-200 text-red-800">❌ ไม่ผ่านการตรวจสอบ</span>
-        ` : ''}
-    </div>
-</td>
 
-                                                    </tr>
-                                                `).join('')}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            `).join('')}
-                        </div>
-                    </div>
-                `;
-                
-                container.appendChild(floorDiv);
-            });
-        }
+    Object.keys(groupedTasks).sort().forEach(floor => {
+        const floorDiv = document.createElement('div');
+        floorDiv.className = 'bg-white rounded-lg shadow-md overflow-hidden mb-6';
 
-        function groupTasksByFloorAndRoom(tasks) {
-            const grouped = {};
-            tasks.forEach(task => {
-                if (!grouped[task.floor]) grouped[task.floor] = {};
-                if (!grouped[task.floor][task.room]) grouped[task.floor][task.room] = [];
-                grouped[task.floor][task.room].push(task);
+        const floorHeader = document.createElement('div');
+        floorHeader.className = 'bg-gradient-to-r from-blue-500 to-blue-600 text-white p-4';
+        floorHeader.innerHTML = `<h2 class="text-xl font-bold">🏢 ชั้น ${floor}</h2>`;
+        floorDiv.appendChild(floorHeader);
+
+        const floorContent = document.createElement('div');
+        floorContent.className = 'p-6 grid grid-cols-1 lg:grid-cols-2 gap-6';
+
+        Object.keys(groupedTasks[floor]).sort().forEach(room => {
+            const roomDiv = document.createElement('div');
+            roomDiv.className = 'border border-gray-200 rounded-lg overflow-hidden';
+
+            const roomHeader = document.createElement('div');
+            roomHeader.className = 'bg-gray-50 px-4 py-3 border-b';
+            roomHeader.innerHTML = `<h3 class="font-semibold text-gray-800">🚪 ห้อง ${room}</h3>`;
+            roomDiv.appendChild(roomHeader);
+
+            const table = document.createElement('table');
+            table.className = 'w-full text-sm';
+            table.innerHTML = `
+                <thead class="bg-gray-100">
+                    <tr>
+                        <th class="px-4 py-2 text-left">งาน</th>
+                        <th class="px-4 py-2 text-center">สถานะ</th>
+                        <th class="px-4 py-2 text-center">ผลตรวจสอบ</th>
+                        <th class="px-4 py-2 text-center">การดำเนินการ</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            `;
+            roomDiv.appendChild(table);
+
+            const tbody = table.querySelector('tbody');
+
+            groupedTasks[floor][room].forEach(task => {
+                const tr = document.createElement('tr');
+                tr.className = getTaskRowClass(task.status);
+
+                // งาน
+                const tdTask = document.createElement('td');
+                tdTask.className = 'px-4 py-3 font-medium';
+                tdTask.textContent = task.taskType;
+
+                // สถานะ
+                const tdStatus = document.createElement('td');
+                tdStatus.className = 'px-4 py-3 text-center';
+                const statusSpan = document.createElement('span');
+                statusSpan.className = `px-2 py-1 rounded-full text-xs font-medium ${getStatusClass(task.status)}`;
+                statusSpan.textContent = getStatusText(task.status);
+                tdStatus.appendChild(statusSpan);
+
+                // ผลตรวจสอบ
+                const tdInspection = document.createElement("td");
+                tdInspection.className = "px-4 py-3 text-center font-medium text-sm";
+                if(task.status === "approved") {
+                    tdInspection.textContent = "✅ ผ่าน";
+                    tdInspection.classList.add("text-green-600");
+                } else if(task.status === "rejected") {
+                    tdInspection.textContent = "❌ ไม่ผ่าน";
+                    tdInspection.classList.add("text-red-600");
+                } else {
+                    tdInspection.textContent = "-";
+                }
+
+                // การดำเนินการ
+                const tdAction = document.createElement("td");
+                tdAction.className = 'px-4 py-3 text-center';
+                const actionDiv = document.createElement("div");
+                actionDiv.className = 'flex justify-center space-x-2';
+
+                if (task.status === 'pending' && window.currentUser?.type === 'housekeeper') {
+                    const btn = document.createElement('button');
+                    btn.className = 'bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-xs transition duration-200';
+                    btn.textContent = '📝 ทำงาน';
+                    btn.onclick = () => openTaskModal(task.id);
+                    actionDiv.appendChild(btn);
+                }
+
+                if (task.status === 'completed' && window.currentUser?.type === 'inspector') {
+                    const btn = document.createElement('button');
+                    btn.className = 'bg-orange-500 hover:bg-orange-600 text-white px-3 py-1 rounded text-xs transition duration-200';
+                    btn.textContent = '🔍 ตรวจสอบ';
+                    btn.onclick = () => openInspectionModal(task.id);
+                    actionDiv.appendChild(btn);
+                }
+
+                if ((task.status === 'approved' || task.status === 'rejected') && task.images?.length > 0) {
+                    const btn = document.createElement('button');
+                    btn.className = 'bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-xs transition duration-200';
+                    btn.textContent = '🖼️ ดูรูป';
+                    btn.onclick = () => viewTaskImages(task.id);
+                    actionDiv.appendChild(btn);
+                }
+
+                // ปุ่มแก้ไขผลตรวจสอบ สำหรับ inspector
+                if((task.status === 'approved' || task.status === 'rejected') && window.currentUser?.type === 'inspector') {
+                    const editBtn = document.createElement("button");
+                    editBtn.className = "bg-purple-500 hover:bg-purple-600 text-white px-2 py-1 rounded text-xs";
+                    editBtn.textContent = "✏️ แก้ไขตรวจสอบ";
+                    editBtn.onclick = () => openInspectionModal(task.id);
+                    actionDiv.appendChild(editBtn);
+                }
+
+                tdAction.appendChild(actionDiv);
+
+                // เพิ่ม td ทั้งหมดลง tr
+                tr.appendChild(tdTask);
+                tr.appendChild(tdStatus);
+                tr.appendChild(tdInspection);
+                tr.appendChild(tdAction);
+
+                tbody.appendChild(tr);
             });
-            return grouped;
-        }
+
+            floorContent.appendChild(roomDiv);
+        });
+
+        floorDiv.appendChild(floorContent);
+        container.appendChild(floorDiv);
+    });
+}
+function groupTasksByFloorAndRoom(tasks) {
+    const grouped = {};
+    tasks.forEach(task => {
+        if (!grouped[task.floor]) grouped[task.floor] = {};
+        if (!grouped[task.floor][task.room]) grouped[task.floor][task.room] = [];
+        grouped[task.floor][task.room].push(task);
+    });
+    return grouped;
+}
 
        
 
@@ -752,13 +798,14 @@ window.inspectTask = async function(event, taskId) {
 
 
         window.viewTaskImages = function(taskId) {
-            const task = window.allTasks.find(t => t.id === taskId);
-            if (!task || !task.images.length) return;
-            
-            window.currentImages = task.images;
-            window.currentImageIndex = 0;
-            showImageModal();
-        };
+    const task = window.allTasks.find(t => t.id === taskId);
+    if (!task || !task.images.length) return;
+    
+    window.currentImages = task.images; // URL จาก Cloudinary
+    window.currentImageIndex = 0;
+    showImageModal();
+};
+
 
         window.openImageViewer = function(taskId, imageIndex) {
             const task = window.allTasks.find(t => t.id === taskId);
@@ -871,19 +918,6 @@ window.inspectTask = async function(event, taskId) {
             renderTasks();
         };
         
-        document.getElementById('housekeeperBtn').addEventListener('click', () => {
-    loginAsHousekeeper();
-});
-
-document.getElementById('inspectorBtn').addEventListener('click', () => {
-    showInspectorLogin();
-});
-
-
-
-    document.getElementById('loginScreen').classList.add('hidden');
-    document.getElementById('inspectorLoginForm').classList.remove('hidden');
-
 
         // Navigation
         window.showTasksView = function() {
