@@ -368,10 +368,6 @@ async function loadTasks() {
 // แม่บ้านบันทึกงาน
 window.completeTask = async function(event, taskId) {
     event.preventDefault();
-
-    // แสดง spinner
-    document.getElementById('loadingModal').classList.remove('hidden');
-
     const assignee = document.getElementById('assignee').value;
     const imageFiles = document.getElementById('taskImages').files;
 
@@ -385,15 +381,24 @@ window.completeTask = async function(event, taskId) {
     await setDoc(taskRef, {
         status: 'completed',
         assignee,
-        images, 
+        images,
         completedAt: new Date()
     }, { merge: true });
 
-    // ซ่อน spinner
-    document.getElementById('loadingModal').classList.add('hidden');
+    // อัปเดต local state
+    const taskIndex = window.allTasks.findIndex(t => t.id === taskId);
+    if (taskIndex !== -1) {
+        window.allTasks[taskIndex].status = 'completed';
+        window.allTasks[taskIndex].assignee = assignee;
+        window.allTasks[taskIndex].images = images;
+        window.allTasks[taskIndex].completedAt = new Date();
+    }
 
     closeModal();
-    
+    alert('บันทึกงานเสร็จเรียบร้อย!');
+
+    // แสดงปุ่มแก้ไขสำหรับแม่บ้าน
+    renderTasks(); // รีเฟรช UI หลังบันทึก
 };
 
 
@@ -604,7 +609,7 @@ function renderTasks(tasks = window.allTasks) {
                     tdInspection.textContent = "❌ ไม่ผ่าน";
                     tdInspection.classList.add("text-red-600");
                 } else {
-                    tdInspection.textContent = "-";
+                    tdInspection.textContent = "รอตรวจสอบ";
                 }
 
                 // การดำเนินการ
@@ -613,6 +618,7 @@ function renderTasks(tasks = window.allTasks) {
                 const actionDiv = document.createElement("div");
                 actionDiv.className = 'flex justify-center space-x-2';
 
+                // ปุ่มสำหรับแม่บ้าน
                 if (task.status === 'pending' && window.currentUser?.type === 'housekeeper') {
                     const btn = document.createElement('button');
                     btn.className = 'bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-xs transition duration-200';
@@ -621,6 +627,7 @@ function renderTasks(tasks = window.allTasks) {
                     actionDiv.appendChild(btn);
                 }
 
+                // ปุ่มสำหรับ inspector
                 if (task.status === 'completed' && window.currentUser?.type === 'inspector') {
                     const btn = document.createElement('button');
                     btn.className = 'bg-orange-500 hover:bg-orange-600 text-white px-3 py-1 rounded text-xs transition duration-200';
@@ -629,21 +636,53 @@ function renderTasks(tasks = window.allTasks) {
                     actionDiv.appendChild(btn);
                 }
 
-                if ((task.status === 'approved' || task.status === 'rejected') && task.images?.length > 0) {
-                    const btn = document.createElement('button');
-                    btn.className = 'bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-xs transition duration-200';
-                    btn.textContent = '🖼️ ดูรูป';
-                    btn.onclick = () => viewTaskImages(task.id);
-                    actionDiv.appendChild(btn);
-                }
-
-                // ปุ่มแก้ไขผลตรวจสอบ สำหรับ inspector
+                // ปุ่มแก้ไขผลตรวจสอบ inspector
                 if((task.status === 'approved' || task.status === 'rejected') && window.currentUser?.type === 'inspector') {
                     const editBtn = document.createElement("button");
                     editBtn.className = "bg-purple-500 hover:bg-purple-600 text-white px-2 py-1 rounded text-xs";
                     editBtn.textContent = "✏️ แก้ไขตรวจสอบ";
                     editBtn.onclick = () => openInspectionModal(task.id);
                     actionDiv.appendChild(editBtn);
+                }
+
+                // ปุ่มยกเลิกส่งสำหรับแม่บ้าน
+                if ((task.status === 'completed' || task.status === 'approved' || task.status === 'rejected') 
+                    && window.currentUser?.type === 'housekeeper') {
+
+                    const cancelBtn = document.createElement("button");
+                    cancelBtn.className = "bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-xs transition duration-200";
+                    cancelBtn.textContent = "❌ ยกเลิกส่ง";
+                    cancelBtn.onclick = async () => {
+                        if (!confirm("คุณต้องการยกเลิกส่งงานนี้หรือไม่?")) return;
+
+                        const taskRef = doc(tasksCollection, task.id);
+                        await setDoc(taskRef, {
+                            status: 'pending',
+                            assignee: '',
+                            images: [],
+                            completedAt: null,
+                            inspectedAt: null,
+                            inspector: '',
+                            inspectionResult: ''
+                        }, { merge: true });
+
+                        // อัปเดต local state
+                        const taskIndex = window.allTasks.findIndex(t => t.id === task.id);
+                        if (taskIndex !== -1) {
+                            window.allTasks[taskIndex].status = 'pending';
+                            window.allTasks[taskIndex].assignee = '';
+                            window.allTasks[taskIndex].images = [];
+                            window.allTasks[taskIndex].completedAt = null;
+                            window.allTasks[taskIndex].inspectedAt = null;
+                            window.allTasks[taskIndex].inspector = '';
+                            window.allTasks[taskIndex].inspectionResult = '';
+                        }
+
+                        renderTasks();
+                        
+                    };
+
+                    actionDiv.appendChild(cancelBtn);
                 }
 
                 tdAction.appendChild(actionDiv);
@@ -664,6 +703,9 @@ function renderTasks(tasks = window.allTasks) {
         container.appendChild(floorDiv);
     });
 }
+
+
+
 function groupTasksByFloorAndRoom(tasks) {
     const grouped = {};
     tasks.forEach(task => {
@@ -698,35 +740,34 @@ function getStatusText(status) {
 }
 
 
-        // Modal functions
-        window.openTaskModal = function(taskId) {
-            const task = window.allTasks.find(t => t.id === taskId);
-            if (!task) return;
+window.openTaskModal = function(taskId, isEdit = false) {
+    const task = window.allTasks.find(t => t.id === taskId);
+    if (!task) return;
 
-            document.getElementById('modalTitle').textContent = `${task.taskType} - ห้อง ${task.room}`;
-            document.getElementById('modalContent').innerHTML = `
-                <form onsubmit="completeTask(event, '${taskId}')" class="space-y-4">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-2">ผู้จัดทำ</label>
-                        <input type="text" id="assignee" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-2">รูปภาพงาน (1-10 รูป)</label>
-                        <input type="file" id="taskImages" multiple accept="image/*" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-                        <p class="text-xs text-gray-500 mt-1">เลือกได้สูงสุด 10 รูป</p>
-                    </div>
-                    <div class="flex space-x-4">
-                        <button type="submit" class="flex-1 bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-6 rounded-lg transition duration-200">
-                            ✅ เสร็จเรียบร้อย
-                        </button>
-                        <button type="button" onclick="closeModal()" class="flex-1 bg-gray-300 hover:bg-gray-400 text-gray-700 font-semibold py-3 px-6 rounded-lg transition duration-200">
-                            ยกเลิก
-                        </button>
-                    </div>
-                </form>
-            `;
-            document.getElementById('taskModal').classList.remove('hidden');
-        };
+    document.getElementById('modalTitle').textContent = `${task.taskType} - ห้อง ${task.room}`;
+    document.getElementById('modalContent').innerHTML = `
+        <form onsubmit="completeTask(event, '${taskId}', ${isEdit})" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">ผู้จัดทำ</label>
+                <input type="text" id="assignee" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" value="${isEdit ? task.assignee : ''}">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">รูปภาพงาน (1-10 รูป)</label>
+                <input type="file" id="taskImages" multiple accept="image/*" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                <p class="text-xs text-gray-500 mt-1">เลือกได้สูงสุด 10 รูป</p>
+            </div>
+            <div class="flex space-x-4">
+                <button type="submit" class="flex-1 bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-6 rounded-lg transition duration-200">
+                    ✅ ${isEdit ? 'อัปเดตงาน' : 'เสร็จเรียบร้อย'}
+                </button>
+                <button type="button" onclick="closeModal()" class="flex-1 bg-gray-300 hover:bg-gray-400 text-gray-700 font-semibold py-3 px-6 rounded-lg transition duration-200">
+                    ยกเลิก
+                </button>
+            </div>
+        </form>
+    `;
+    document.getElementById('taskModal').classList.remove('hidden');
+};
 
         window.openInspectionModal = function(taskId) {
             const task = window.allTasks.find(t => t.id === taskId);
