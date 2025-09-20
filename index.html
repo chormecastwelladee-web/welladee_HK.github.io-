@@ -368,6 +368,10 @@ async function loadTasks() {
 // แม่บ้านบันทึกงาน
 window.completeTask = async function(event, taskId) {
     event.preventDefault();
+    
+    // แสดง loading
+    showLoading(true);
+
     const assignee = document.getElementById('assignee').value;
     const imageFiles = document.getElementById('taskImages').files;
 
@@ -377,29 +381,28 @@ window.completeTask = async function(event, taskId) {
         if (url) images.push(url);
     }
 
-    const taskRef = doc(tasksCollection, taskId);
-    await setDoc(taskRef, {
-        status: 'completed',
-        assignee,
-        images,
-        completedAt: new Date()
-    }, { merge: true });
+    try {
+        const taskRef = doc(tasksCollection, taskId);
+        await setDoc(taskRef, {
+            status: 'completed',
+            assignee,
+            images, // เก็บ URL ของ Cloudinary
+            completedAt: new Date()
+        }, { merge: true });
 
-    // อัปเดต local state
-    const taskIndex = window.allTasks.findIndex(t => t.id === taskId);
-    if (taskIndex !== -1) {
-        window.allTasks[taskIndex].status = 'completed';
-        window.allTasks[taskIndex].assignee = assignee;
-        window.allTasks[taskIndex].images = images;
-        window.allTasks[taskIndex].completedAt = new Date();
+        // รีโหลดงานทั้งหมดหลังบันทึก
+        await loadTasks(); // ดึงข้อมูลใหม่จาก Firestore
+        renderTasks();     // แสดงผลใหม่
+        closeModal();
+        alert('บันทึกงานเสร็จเรียบร้อย!');
+    } catch (err) {
+        console.error(err);
+        alert('เกิดข้อผิดพลาด กรุณาลองใหม่');
+    } finally {
+        showLoading(false); // ปิด loading
     }
-
-    closeModal();
-    alert('บันทึกงานเสร็จเรียบร้อย!');
-
-    // แสดงปุ่มแก้ไขสำหรับแม่บ้าน
-    renderTasks(); // รีเฟรช UI หลังบันทึก
 };
+
 
 
 
@@ -432,6 +435,7 @@ window.completeTask = async function(event, taskId) {
         // ใน <script type="module">
 window.loginAsHousekeeper = function() {
     window.currentUser = { type: 'housekeeper', name: 'แม่บ้าน' };
+    localStorage.setItem('currentUser', JSON.stringify(window.currentUser));
     showMainApp();
 };
 
@@ -453,6 +457,7 @@ const inspectors = [
 
     if (user) {
         window.currentUser = { type: 'inspector', name: user.name, email: user.email };
+        localStorage.setItem('currentUser', JSON.stringify(window.currentUser));
         showMainApp();
     } else {
         alert('อีเมลหรือรหัสผ่านไม่ถูกต้อง');
@@ -469,11 +474,21 @@ const inspectors = [
 
         window.logout = function() {
     window.currentUser = null;
+    localStorage.removeItem('currentUser');
     document.getElementById('userRole').textContent = '';
     document.getElementById('mainApp').classList.add('hidden');
     document.getElementById('loginScreen').classList.remove('hidden');
     document.getElementById('inspectorLoginForm').classList.add('hidden');
 };
+
+// เช็คผู้ใช้ตอนโหลดหน้า
+window.addEventListener('DOMContentLoaded', () => {
+    const savedUser = localStorage.getItem('currentUser');
+    if (savedUser) {
+        window.currentUser = JSON.parse(savedUser);
+        showMainApp(); // ข้ามหน้า login ไปหน้า main
+    }
+});
 
 
         function showMainApp() {
@@ -493,6 +508,37 @@ async function initAppData() {
     listenTasksRealtime();   // ใช้ realtime listener เพียงตัวเดียว
     updateRoomFilter();
     checkMonthlyReset();
+}
+
+function showLoading(show) {
+    let loader = document.getElementById("loadingModal");
+    if (!loader) {
+        loader = document.createElement("div");
+        loader.id = "loadingModal";
+        loader.className = "fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50";
+        loader.innerHTML = `
+            <div class="bg-white rounded-lg p-6 flex items-center space-x-4">
+                <div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-8 w-8"></div>
+                <span>กำลังประมวลผล...</span>
+            </div>
+        `;
+        document.body.appendChild(loader);
+
+        // สไตล์ spinner
+        const style = document.createElement("style");
+        style.innerHTML = `
+            .loader {
+                border-top-color: #3498db;
+                animation: spin 1s linear infinite;
+            }
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+    loader.style.display = show ? 'flex' : 'none';
 }
 
 
