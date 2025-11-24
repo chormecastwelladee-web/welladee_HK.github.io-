@@ -93,10 +93,7 @@
                         <button onclick="logout()" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition duration-200">
                             ออกจากระบบ
                         </button>
-                        <button id="clearDataBtn" class="bg-red-500 text-white px-4 py-2 rounded">
-                            ล้างข้อมูลทั้งหมด
-                        </button>
-
+                        
                     </div>
                 </div>
             </div>
@@ -1245,19 +1242,7 @@ function renderPieChart() {
 
         // Event listeners
         document.getElementById('floorFilter').addEventListener('change', updateRoomFilter);
-        document.getElementById("clearDataBtn").addEventListener("click", async () => {
-  if (confirm("⚠️ คุณแน่ใจหรือไม่ว่าจะล้างข้อมูลทั้งหมด?")) {
-    try {
-      const res = await fetch("https://YOUR_PROJECT.cloudfunctions.net/deleteAllImages", {
-        method: "POST"
-      });
-      const data = await res.json();
-      alert("✅ " + data.message);
-    } catch (err) {
-      alert("❌ เกิดข้อผิดพลาด: " + err.message);
-    }
-  }
-});
+   
     </script>
 
 </html>
